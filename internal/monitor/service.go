@@ -276,6 +276,7 @@ func (s *Service) checkStrategy(strategy *config.StrategyConfig, event domain.Kl
 			// Only trigger if current pct >= maxPct * factor during cooldown
 			if absPct >= globalState.MaxPct*factor {
 				s.handleTrigger(strategy, rule, event, basePrice, event.Close, pct)
+				break // Only one alert per check - first matching rule wins
 			}
 		}
 	}
