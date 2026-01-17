@@ -6,8 +6,6 @@
 # Binaries
 /bin/
 *.exe
-collector
-monitor
 
 # IDE
 .idea/
