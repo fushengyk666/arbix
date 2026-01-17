@@ -80,19 +80,19 @@ strategies:
       - name: L1
         window: 1m
         threshold: 5.0    # 5% change triggers alert
-        cooldown: 1m
+        cooldown: 5m
 
       # L2: 5-minute pump/dump
       - name: L2
         window: 5m
         threshold: 10.0
-        cooldown: 5m
+        cooldown: 10m
 
       # L3: 60-minute trend
       - name: L3
         window: 60m
         threshold: 30.0
-        cooldown: 60m
+        cooldown: 120m
   - name: big_change
     channels: ["tg_2","webhook_2"]  # Send alerts to these channels
     expansion_factor: 1.2   # Escalation: trigger if change > last * factor
@@ -100,4 +100,4 @@ strategies:
       - name: 60m
         window: 60m
         threshold: 30.0
-        cooldown: 60m
+        cooldown: 120m
