@@ -1,0 +1,103 @@
+# Arbix Configuration
+# Sensitive values (tokens, URLs) are loaded from .env file
+# See .env.example for environment variable format
+
+# ============================================
+# NATS Configuration
+# ============================================
+nats:
+  url: nats://localhost:4222
+  reconnect_wait: 2s
+  max_reconnects: 10
+
+# ============================================
+# Binance Configuration
+# ============================================
+binance:
+  rest_base_url: https://api.binance.com
+  ws_base_url: wss://stream.binance.com:9443
+  futures_rest_url: https://fapi.binance.com
+  futures_ws_url: wss://fstream.binance.com
+  websocket:
+    max_streams_per_conn: 50
+    reconnect_delay: 1s
+    max_reconnect_delay: 30s
+    connect_stagger: 200ms
+  markets:
+    quote_assets:
+      - USDT
+    spot_enabled: true
+    futures_enabled: true
+
+# ============================================
+# Notification Channels
+# ============================================
+# Each channel reads credentials from .env using env_prefix
+# Example: env_prefix: TG_MAIN → reads TG_MAIN_TOKEN, TG_MAIN_CHAT_ID
+
+channels:
+  tg_1:
+    type: telegram
+    enabled: true
+    env_prefix: TG_1
+  tg_2:
+    type: telegram
+    enabled: true
+    env_prefix: TG_2
+
+  # Example: second Telegram channel (disabled)
+  # tg_alerts:
+  #   type: telegram
+  #   enabled: false
+  #   env_prefix: TG_ALERTS
+
+  webhook_1:
+    type: webhook
+    enabled: true
+    env_prefix: WEBHOOK_1
+
+  webhook_2:
+    type: webhook
+    enabled: true
+    env_prefix: WEBHOOK_2
+  # Example: Webhook channel
+  # webhook_main:
+  #   type: webhook
+  #   enabled: false
+  #   env_prefix: WEBHOOK_MAIN
+
+# ============================================
+# Monitoring Strategies
+# ============================================
+# Each strategy defines rules and target channels
+
+strategies:
+  - name: volatility
+    channels: ["tg_1","webhook_1"]  # Send alerts to these channels
+    expansion_factor: 1.2   # Escalation: trigger if change > last * factor
+    rules:
+      # L1: 1-minute rapid changes
+      - name: L1
+        window: 1m
+        threshold: 5.0    # 5% change triggers alert
+        cooldown: 1m
+
+      # L2: 5-minute pump/dump
+      - name: L2
+        window: 5m
+        threshold: 10.0
+        cooldown: 5m
+
+      # L3: 60-minute trend
+      - name: L3
+        window: 60m
+        threshold: 30.0
+        cooldown: 60m
+  - name: big_change
+    channels: ["tg_2","webhook_2"]  # Send alerts to these channels
+    expansion_factor: 1.2   # Escalation: trigger if change > last * factor
+    rules:
+      - name: 60m
+        window: 60m
+        threshold: 30.0
+        cooldown: 60m

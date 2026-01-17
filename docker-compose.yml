@@ -1,0 +1,54 @@
+networks:
+  arbix-net:
+    driver: bridge
+
+volumes:
+  nats_data:
+
+
+services:
+  # --- Infrastructure ---
+  nats:
+    image: nats:alpine
+    command: "-js"
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
+    networks:
+      - arbix-net
+
+  # --- Backend Services ---
+  monitor:
+    build: .
+    command: [ "/app/monitor", "-config", "/app/configs/config.yaml" ]
+    environment:
+      - NATS_URL=nats://nats:4222
+    env_file:
+      - .env
+    volumes:
+      - ./configs:/app/configs:ro
+    depends_on:
+      nats:
+        condition: service_started
+      collector:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - arbix-net
+
+  collector:
+    build: .
+    command: [ "/app/collector", "-config", "/app/configs/config.yaml" ]
+    environment:
+      - NATS_URL=nats://nats:4222
+    volumes:
+      - ./configs:/app/configs:ro
+    depends_on:
+      nats:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - arbix-net

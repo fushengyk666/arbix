@@ -1,0 +1,32 @@
+# Environment
+.env
+*.env.local
+.env.production
+
+# Binaries
+/bin/
+*.exe
+collector
+monitor
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test
+coverage.out
+*.test
+
+# Vendor (if not using go mod vendor)
+# vendor/
