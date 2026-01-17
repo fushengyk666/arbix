@@ -212,24 +212,48 @@ func (s *Service) checkStrategy(strategy *config.StrategyConfig, event domain.Kl
 	for _, rule := range strategy.Rules {
 		targetTime := event.OpenTime - rule.Window.Milliseconds()
 
-		found := false
-		var prevPrice float64
+		// Find min and max price within the window
+		var minPrice, maxPrice float64
+		hasData := false
 
 		for i := len(history) - 1; i >= 0; i-- {
-			if history[i].Time <= targetTime {
-				prevPrice = history[i].Price
-				if targetTime-history[i].Time < 60000 { // 1 min tolerance
-					found = true
+			if history[i].Time < targetTime {
+				break // Outside window
+			}
+			price := history[i].Price
+			if !hasData {
+				minPrice = price
+				maxPrice = price
+				hasData = true
+			} else {
+				if price < minPrice {
+					minPrice = price
 				}
-				break
+				if price > maxPrice {
+					maxPrice = price
+				}
 			}
 		}
 
-		if !found || prevPrice == 0 {
+		if !hasData || minPrice == 0 || maxPrice == 0 {
 			continue
 		}
 
-		pct := (event.Close - prevPrice) / prevPrice * 100
+		// Calculate max pump (from min) and max dump (from max)
+		pumpPct := (event.Close - minPrice) / minPrice * 100 // Positive = pump
+		dumpPct := (event.Close - maxPrice) / maxPrice * 100 // Negative = dump
+
+		// Use the larger absolute change
+		var pct float64
+		var basePrice float64
+		if math.Abs(pumpPct) >= math.Abs(dumpPct) {
+			pct = pumpPct
+			basePrice = minPrice
+		} else {
+			pct = dumpPct
+			basePrice = maxPrice
+		}
+
 		absPct := math.Abs(pct)
 
 		if absPct >= rule.Threshold {
@@ -243,9 +267,15 @@ func (s *Service) checkStrategy(strategy *config.StrategyConfig, event domain.Kl
 				globalState.MaxPct = 0
 			}
 
-			// Only trigger if current pct > maxPct during cooldown
-			if absPct > globalState.MaxPct {
-				s.handleTrigger(strategy, rule, event, prevPrice, event.Close, pct)
+			// Apply ExpansionFactor to cross-rule deduplication
+			factor := strategy.ExpansionFactor
+			if factor == 0 {
+				factor = 1.2
+			}
+
+			// Only trigger if current pct >= maxPct * factor during cooldown
+			if absPct >= globalState.MaxPct*factor {
+				s.handleTrigger(strategy, rule, event, basePrice, event.Close, pct)
 			}
 		}
 	}
