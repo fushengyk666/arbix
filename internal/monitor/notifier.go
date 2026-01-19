@@ -196,22 +196,31 @@ func formatPriceWithPrecision(price float64, precision int) string {
 	if price == 0 {
 		return "N/A"
 	}
+	var result string
 	if precision >= 0 {
-		return fmt.Sprintf("%.*f", precision, price)
+		result = fmt.Sprintf("%.*f", precision, price)
+	} else {
+		// Fallback: adaptive precision
+		if price < 0.0001 {
+			result = fmt.Sprintf("%.8f", price)
+		} else if price < 0.01 {
+			result = fmt.Sprintf("%.6f", price)
+		} else if price < 1 {
+			result = fmt.Sprintf("%.5f", price)
+		} else if price < 10 {
+			result = fmt.Sprintf("%.4f", price)
+		} else if price < 100 {
+			result = fmt.Sprintf("%.3f", price)
+		} else {
+			result = fmt.Sprintf("%.2f", price)
+		}
 	}
-	// Fallback: adaptive precision
-	if price < 0.0001 {
-		return fmt.Sprintf("%.8f", price)
-	} else if price < 0.01 {
-		return fmt.Sprintf("%.6f", price)
-	} else if price < 1 {
-		return fmt.Sprintf("%.5f", price)
-	} else if price < 10 {
-		return fmt.Sprintf("%.4f", price)
-	} else if price < 100 {
-		return fmt.Sprintf("%.3f", price)
+	// Trim trailing zeros and unnecessary decimal point
+	if strings.Contains(result, ".") {
+		result = strings.TrimRight(result, "0")
+		result = strings.TrimRight(result, ".")
 	}
-	return fmt.Sprintf("%.2f", price)
+	return result
 }
 
 func valuesAbs(v float64) float64 {
