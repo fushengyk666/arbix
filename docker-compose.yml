@@ -10,12 +10,13 @@ services:
   # --- Infrastructure ---
   nats:
     image: nats:alpine
-    command: "-js"
+    command: "-c /etc/nats/nats.conf"
     ports:
       - "4222:4222"
       - "8222:8222"
     volumes:
       - nats_data:/data
+      - ./configs/nats.conf:/etc/nats/nats.conf:ro
     restart: unless-stopped
     networks:
       - arbix-net
