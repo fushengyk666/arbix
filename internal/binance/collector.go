@@ -48,6 +48,11 @@ type collectorStats struct {
 	spotSymbols map[string]bool
 	futSymbols  map[string]bool
 	fundSymbols map[string]bool
+
+	// Subscription snapshot from last period (aligned with symbol counts)
+	lastSpotSub int
+	lastFutSub  int
+	lastFundSub int
 }
 
 // NewCollector creates a new Binance market data collector
@@ -346,19 +351,20 @@ func (c *Collector) createClients(spot, futures, funding []string) []*wsClient {
 	}
 
 	// Helper to chunk streams into multiple clients
-	createBatch := func(baseURL string, streams []string, handler func([]byte), prefix string) {
+	createBatch := func(baseURL string, streams []string, handler func([]byte), prefix string, sType string) {
 		for i := 0; i < len(streams); i += maxStreams {
 			end := min(i+maxStreams, len(streams))
 			chunk := streams[i:end]
 			name := fmt.Sprintf("%s-%d", prefix, i/maxStreams)
 			client := newWSClient(baseURL, chunk, handler, c.logger, name, c.cfg.WebSocket)
+			client.streamType = sType
 			clients = append(clients, client)
 		}
 	}
 
-	createBatch(c.cfg.WSBaseURL, spot, c.handleSpotMessage, "Spot")
-	createBatch(c.cfg.FuturesWS, futures, c.handleFuturesMessage, "Futures")
-	createBatch(c.cfg.FuturesWS, funding, c.handleFundingMessage, "Funding")
+	createBatch(c.cfg.WSBaseURL, spot, c.handleSpotMessage, "Spot", "spot")
+	createBatch(c.cfg.FuturesWS, futures, c.handleFuturesMessage, "Futures", "futures")
+	createBatch(c.cfg.FuturesWS, funding, c.handleFundingMessage, "Funding", "funding")
 
 	return clients
 }
@@ -617,42 +623,59 @@ func (c *Collector) logStats() {
 	c.stats.lastParsed = parsed
 	c.stats.lastFailed = failed
 
-	// Get symbol counts and reset
+	// Count current subscriptions (snapshot for next period)
+	var curSpotSub, curFutSub, curFundSub int
+	c.mu.RLock()
+	clientCount := len(c.clients)
+	for _, client := range c.clients {
+		switch client.streamType {
+		case "spot":
+			curSpotSub += len(client.streams)
+		case "futures":
+			curFutSub += len(client.streams)
+		case "funding":
+			curFundSub += len(client.streams)
+		}
+	}
+	c.mu.RUnlock()
+
+	// Get symbol counts and aligned subscription snapshot, then reset
 	c.stats.mu.Lock()
 	spotCount := len(c.stats.spotSymbols)
 	futCount := len(c.stats.futSymbols)
 	fundCount := len(c.stats.fundSymbols)
+
+	// Use last period's subscription snapshot as denominator
+	// On first run, fall back to current snapshot
+	spotSub := c.stats.lastSpotSub
+	futSub := c.stats.lastFutSub
+	fundSub := c.stats.lastFundSub
+	if spotSub == 0 && futSub == 0 && fundSub == 0 {
+		spotSub = curSpotSub
+		futSub = curFutSub
+		fundSub = curFundSub
+	}
+
+	// Save current subscription snapshot for next period
+	c.stats.lastSpotSub = curSpotSub
+	c.stats.lastFutSub = curFutSub
+	c.stats.lastFundSub = curFundSub
 
 	c.stats.spotSymbols = make(map[string]bool)
 	c.stats.futSymbols = make(map[string]bool)
 	c.stats.fundSymbols = make(map[string]bool)
 	c.stats.mu.Unlock()
 
-	// Count subscriptions
-	var spotSub, futSub, fundSub int
-	c.mu.RLock()
-	clientCount := len(c.clients)
-	for _, client := range c.clients {
-		if len(client.streams) == 0 {
-			continue
-		}
-		first := client.streams[0]
-		if strings.Contains(first, "markPrice") {
-			fundSub += len(client.streams)
-		} else if strings.Contains(client.baseURL, "fstream") {
-			futSub += len(client.streams)
-		} else {
-			spotSub += len(client.streams)
-		}
-	}
-	c.mu.RUnlock()
-
-	// Calculate coverage percentage
+	// Calculate coverage percentage (capped at 100%)
 	pct := func(count, total int) float64 {
 		if total == 0 {
 			return 0
 		}
-		return float64(count) / float64(total) * 100
+		v := float64(count) / float64(total) * 100
+		if v > 100 {
+			v = 100
+		}
+		return v
 	}
 
 	c.logger.Infof("[Binance 1min] WS:%d | Recv:%d OK:%d Fail:%d | Spot:%d/%d(%.0f%%) Fut:%d/%d(%.0f%%) Fund:%d/%d(%.0f%%)",
@@ -666,12 +689,13 @@ func (c *Collector) logStats() {
 // --- WebSocket Client ---
 
 type wsClient struct {
-	baseURL string
-	streams []string
-	handler func([]byte)
-	logger  *zap.SugaredLogger
-	name    string
-	wsCfg   config.WebSocketConfig
+	baseURL    string
+	streams    []string
+	streamType string // "spot", "futures", or "funding"
+	handler    func([]byte)
+	logger     *zap.SugaredLogger
+	name       string
+	wsCfg      config.WebSocketConfig
 
 	ctx    context.Context
 	cancel context.CancelFunc

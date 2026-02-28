@@ -17,6 +17,12 @@ services:
     volumes:
       - nats_data:/data
       - ./configs/nats.conf:/etc/nats/nats.conf:ro
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz" ]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+      start_period: 2s
     restart: unless-stopped
     networks:
       - arbix-net
@@ -33,7 +39,7 @@ services:
       - ./configs:/app/configs:ro
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
       collector:
         condition: service_started
     restart: unless-stopped
@@ -49,7 +55,7 @@ services:
       - ./configs:/app/configs:ro
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - arbix-net
